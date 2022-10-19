@@ -1,0 +1,187 @@
+\documentclass[11pt]{article}
+
+\usepackage[backend=bibtex8]{biblatex}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper, total={6in, 9in}]{geometry}
+\usepackage{verbatim}
+\usepackage{pdfpages}
+\usepackage[version=4]{mhchem}
+\usepackage{siunitx}
+\usepackage{graphicx}
+
+\graphicspath{ {AppendixA/} }
+
+\addbibresource{bibliography.bib}
+
+\title{Predicting the occupancy of a room}
+\author{Kalle Kankaanpää}
+\date{October 7, 2022}
+
+\begin{document}
+
+\maketitle
+\section{Introduction}
+
+Knowing whether someone is currently using a room or space is beneficial.
+With that knowledge IOT automation systems can make more ecological decisions, like shutting the lights off or turning down the air conditioning if the room is empty.
+The simple and "dumb" motion sensors used to control lights aren't always enough.
+For example, working in a space where the lights get turned off time after time because a movement sensor can't see any movement, while in fact there is someone working.
+
+This report compares two different machine learning models.
+First the problem is formulated, then the methods are introduced briefly.
+Then each model is discussed more thoroughly and compared against eachother.
+Finally the comparison results are analyzed and a conclusion is drawn.
+
+\section{Problem Formulation}
+
+Sensor readings from a \SI{27,6}{\meter\squared} room are used as datapoints. 
+The datapoints contain four light, sound, and temperature readings; two binary motion sensor readings; \ce{CO2} reading; a \ce{CO2} slope which was calculated by fitting a line on a sliding window of 25 \ce{CO2} readings; timestamp; and occupancy count.
+The sensor readings were collected every 30 seconds and the occupancy count in the room was noted manually.
+The dataset was made by Adarsh Pal Singh and Dr. Sachin Chaudhari as part of their research on the subject\cite{Singh2018}.
+It was acquired from the UCI Maching Learning Repository\cite{Singh2021}.
+There are 10129 datapoints with 0 missing values.
+The data collection period was 4 days and the occupancy in the room was between 0 and 3 people.
+
+The problem is a supervised multivariate multi-class classification problem. 
+The features of the problem are the sensor readings and the calculated \ce{CO2} slope.
+The timestamp is intentionally discraded to allow for a more general model.
+The label for the problem is the occupancy count which is an integer in range $[0, 3]$.
+
+The scikit-learn\cite{scikit-learn} python package is used to train and evaluate the models. 
+Pandas\cite{pandas} and NumPy\cite{numpy} are used to manipulate the data.
+Seaborn\cite{seaborn} and matplotlib\cite{matplotlib} are used to visualise the findings.
+
+\section{Methods}
+
+Kmeans clustering was used to study the continuous features.
+Clustering with $k=4$ showed that the four continuos features formed four quite distinctive clusters.
+The fact that clustering showed four distinct clusters means that the classification methods should work quite well on the problem.
+
+Logistic regression with linear maps and logistic loss was chosen as the first method.
+It was chosen since there seems to be some correlation between the room occupancy and sound, light, \ce{CO2}, and temperature readings, like shown in figure \ref{figure:1}.
+Logistic regression also seemed like a great starting point, because it's one of the more simple model available. 
+Since the dataset is not huge it's also a plus that logistic regression has good accuracy for smaller datasets.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{output_4_0}
+    \caption{Scatterplots of the continuous features and the occupancy as coordinates}
+    \label{figure:1}
+\end{figure}
+
+The second method is Random Forest with gini impurity loss function.
+Random Forest was chosen over Decision Tree to combat overfitting of the data.
+Decision Tree based classifier seemed like a good model because some data, like the motion sensor readings, correlated heavily with the room being empty or not.
+Based on the visualisations most of the features seemed to have a lot of information.
+For example, the motion sensor reading is really certain way to determine that the room is empty.
+Only in 24 out of 8204 motion sensor readings where the signal was 0 the room was actually occupied, like seen in figure \ref{figure:2}. 
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=6cm]{output_5_1}
+    \caption{Occupancy compared to signal from movement sensor}
+    \label{figure:2}
+\end{figure}
+
+The dataset was split to training, validation, and test sets with a 2:1:1 split. 
+Test and validation sets are quite big to lessen the probability the one set would contain only datapoints from empty room.
+Having datapoints only from a empty room could be possible with smaller testing and validation sets, because great majority of the data is from an empty room.
+Splitting was done with \texttt{train\_test\_split} function from the \texttt{sklearn.model\_selection} package.
+
+The data was preprosessed to fit a more general usecase. 
+Averages were calculated for temperature, sound, and light and a maximum value was taken from the two motion sensors.
+This way the model could be used in any similar room with any number of sensors instead of needing, for example, 4 sensors for temperature, sound, and light.
+
+\subsection{Logistic regression model}
+
+Feature standardization is used to help the logistic regression model converge.
+The features were standardized with \texttt{sklearn.preprosessing.StandardScaler} to values in range $[-1, 1]$.
+\texttt{StandardScaler} was used since it produced the best results from the different scalers tested.
+
+The grid search method was used to tune the hyperparameters for the logistic regression. 
+Grid search tries all defined parameter candidates and compares the outputs in order to find the best possible parameters for the model.
+Accuracy of the model was used as the scoring criteria and tuned hyperparameters for my model are listed in table \ref{table:1}.
+\begin{table}[h]
+    \centering
+    \begin{tabular}{ | c | c | c | c | }
+        \hline
+        Parameter & C & penalty & solver \\
+        \hline
+        Value & 10 & l1 & saga \\
+        \hline
+    \end{tabular}
+    \caption{Hyperparameters for logistic regression}
+    \label{table:1}
+\end{table}
+
+Errors for training and validation are calculated with logistic loss function. 
+Logistic loss was used since it was the only allowed loss function for logistic regression.
+
+Confusion matrix and validation accuracy are used to compare the two models. 
+The \texttt{accuracy\_score} and \texttt{confusion\_matrix} functions from \texttt{sklearn.metrics} package are used to compute these metrics.
+Both functions are used to get better understanding of the underlying properties of the models.
+It's important to use other metrics alongside the the accuracy, because large part of the datapoints in the dataset are from an empty room which could skew the model.
+
+\subsection{Random Forest}
+
+The Random Forest model didn't use any standardization of the features.
+Standardization wasn't used because the underlying decision trees don't benefit from standardization.
+
+Gini impurity was used as the loss function because it's faster to compute than the information gain.
+Which in turn makes model learn faster a bit faster.
+With my dataset the speedup was not really a noticeable but with a bigger set or larger number of estimators it could make a difference.
+The Gini impurity is also baked into the Random Forest implementation of \texttt{sklearn}.
+
+The same method of tuning hyperparameters was used on Random Forest as was used on Logistic Regression.
+The tuned parameters were number of estimators, maximum features, and minimum samples for a leaf.
+The grid search showed that the default values of \texttt{RandomForestClassifier} (listed in table \ref{table:2}) produced the most accurate result.
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{ | c | c | c | c | }
+        \hline
+        Parameter & n\_estimators & min\_samples\_leaf & max\_features \\
+        \hline
+        Value & 100 & 1 & sqrt \\
+        \hline
+    \end{tabular}
+    \caption{Hyperparameters for random forest}
+    \label{table:2}
+\end{table}
+
+\section{Results}
+
+Accuracy scores are used to compare the models.
+The accuracy score of classification model is equivalent of the validation error of linear models.
+The logistic regression model managed to classify the validation data with 95,6\% accuracy.
+When looking at the confusion matrix of the result, it can be seen that the model has some difficulties when the room has three people in it.
+It's quite unintuitive why this happens because one would think that it would be much easier to detect three people in a room compared to just one.
+
+The random forest model performed even better and classified the validation data with 99,7\% accuracy.
+And the confusion matrix of the model shows that it had no difficulties detecting the room being empty versus occupied.
+The only missclassifications happened with minimun two people in the room, which is logical.
+
+Based on these considerations the random forest model was chosen.
+The test accuracy of the random forest model is 99,4\% which is in line with the validation accuracy.
+
+\section{Conclusion}
+
+In this report classification models were used to classify the number of people in a room based on temperature, \ce{CO2} level, etc. in the room. 
+The two models compared in this report were logistic regression and random forest.
+Both models performed quite well, but the random forest model was chosen as the final model due to it's exceptional accuracy.
+
+There doesn't seem to be a lot of room for improvement, since the accuracy is already so high. 
+The high accuracy isn't a fluke either since the validation set contained data from each lable with appropriate porportion.
+Overfitting shouldn't be a problem either because of the overfitting control random forest provides.
+
+The generality of the model is a bit of an question mark, since the data was collected from controlled environment.
+It would be interesting to see how the model would perform on data from a different room with different people.
+Another interesting thing is how the model would scale with bigger rooms and larger number of people.
+
+\printbibliography
+
+\appendix
+\includepdf[pages=-]{AppendixA.pdf}
+
+\end{document}
+
